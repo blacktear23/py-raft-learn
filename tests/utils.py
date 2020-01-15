@@ -59,7 +59,7 @@ def tick_nodes(nodes, dump=None):
     time.sleep(0.05)
     if dump is not None:
         LOG.info('---------- Tick %s ----------' % dump)
-        dump_nodes(nodes)
+        dump_clusters(nodes)
 
 
 def stop_nodes(nodes):
@@ -75,4 +75,23 @@ def dump_nodes(nodes):
             running = 'S'
         for cid, rg in node.raft_groups.items():
             msg = 'Node[%s]: %s Cluster: %d %s' % (running, node.addr, cid, rg)
+            LOG.info(msg)
+
+
+def dump_clusters(nodes):
+    clusters = {}
+    for node in nodes:
+        for cid, rg in node.raft_groups.items():
+            if cid in clusters:
+                clusters[cid].append((node, rg))
+            else:
+                clusters[cid] = [(node, rg)]
+
+    for cid, rgs in clusters.items():
+        LOG.info('Cluster: %s' % cid)
+        for node, rg in rgs:
+            running = 'R'
+            if node.suspended:
+                running = 'S'
+            msg = 'Node[%s]: %s\n  %s' % (running, node.addr, rg)
             LOG.info(msg)

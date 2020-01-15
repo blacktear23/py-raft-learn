@@ -171,8 +171,8 @@ class Raft(object):
         if self.timeouted:
             tostr = 'O'
 
-        ret = 'id=%s addr=%s term=%s state=%s voted_for=%s cfg_ver=%s commit=%s apply=%s timeout=%d timeouted=%s' % (
-            self.id, self.address, self.term, self.get_state()[0:1], self.voted_for, self.config_version,
+        ret = 'Raft<id=%s state=%s> addr=%s term=%s voted_for=%s cfg_ver=%s commit=%s apply=%s timeout=%d timeouted=%s' % (
+            self.id, self.get_state()[0:1], self.address, self.term, self.voted_for, self.config_version,
             self.commit_index, self.apply_index, self.expire_tick, tostr,
         )
         ret += self.format_list('logs', self.logs)
@@ -638,6 +638,7 @@ class Raft(object):
         if voted >= self.quorum():
             last_index, _ = self.get_last_log()
             self.state = RaftState.Leader
+            self.timeouted = False
             for peer in self.peers.values():
                 peer.next_index = last_index + 1
 

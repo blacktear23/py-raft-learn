@@ -1,6 +1,7 @@
 from cluster_test import *
 from node_fail_test import *
 from corner_case_test import *
+from multi_raft_test import *
 
 
 TESTS = [
@@ -14,4 +15,5 @@ TESTS = [
     test_brain_split_2,
     test_brain_split_3,
     test_replication,
+    test_multi_raft,
 ]
