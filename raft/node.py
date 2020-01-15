@@ -27,7 +27,7 @@ class Node(Thread):
                 break
 
             if self.suspended:
-                LOG.info('Skip item', cmd)
+                LOG.info('Node[S]: %s Skip cmd %s' % (self.addr, cmd))
                 continue
 
             if cmd == 'tick':
@@ -111,10 +111,20 @@ class Node(Thread):
         return self.raft_groups.get(cluster_id)
 
     def dump(self):
+        running = 'R'
+        if self.suspended:
+            running = 'S'
         for cid, raft in self.raft_groups.items():
-            LOG.info('Node: %s, Cluster: %s' % (self.addr, cid))
+            LOG.info('Node[%s]: %s, Cluster: %s' % (running, self.addr, cid))
             LOG.info('%s' % raft)
     # End API functions
+
+    # API for test
+    def force_set(self, cluster_id, key, value):
+        rg = self.get_cluster(cluster_id)
+        if rg:
+            rg.force_append_log('SET %s %s' % (key, value))
+    # End API for test
 
     # Helper Functions
     def do_propose(self, params):

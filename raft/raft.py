@@ -77,8 +77,8 @@ class Peer(object):
             return 'Unknown'
 
     def __str__(self):
-        return 'id=%d addr=%s mode=%s voted_for=%d next_index=%d match_index=%d match_config_version=%d' % (
-            self.id, self.address, self.get_mode()[0], self.voted_for,
+        return 'id=%d addr=%s mode=%s voted_for=%d pre_voted_for=%d next_index=%d match_index=%d match_config_version=%d' % (
+            self.id, self.address, self.get_mode()[0], self.voted_for, self.pre_voted_for,
             self.next_index, self.match_index, self.match_config_version
         )
 
@@ -830,6 +830,13 @@ class Raft(object):
 
         return choose
     # End Helper functions
+
+    # API for test
+    def force_append_log(self, data):
+        last_idx, _ = self.get_last_log()
+        log = Log(last_idx + 1, self.term, data)
+        self.logs.append(log)
+    # End API for test
 
     # API functions
     def propose(self, future):

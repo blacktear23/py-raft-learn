@@ -52,11 +52,14 @@ def on_leader(nodes, cluster_id, func=None):
     return ret
 
 
-def tick_nodes(nodes):
+def tick_nodes(nodes, dump=None):
     for node in nodes:
         node.tick()
 
     time.sleep(0.05)
+    if dump is not None:
+        LOG.info('---------- Tick %s ----------' % dump)
+        dump_nodes(nodes)
 
 
 def stop_nodes(nodes):
@@ -67,6 +70,9 @@ def stop_nodes(nodes):
 
 def dump_nodes(nodes):
     for node in nodes:
+        running = 'R'
+        if node.suspended:
+            running = 'S'
         for cid, rg in node.raft_groups.items():
-            msg = 'Node: %s Cluster: %d %s' % (node.addr, cid, rg)
+            msg = 'Node[%s]: %s Cluster: %d %s' % (running, node.addr, cid, rg)
             LOG.info(msg)
