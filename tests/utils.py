@@ -63,3 +63,10 @@ def stop_nodes(nodes):
     for node in nodes:
         node.stop()
         node.join()
+
+
+def dump_nodes(nodes):
+    for node in nodes:
+        for cid, rg in node.raft_groups.items():
+            msg = 'Node: %s Cluster: %d %s' % (node.addr, cid, rg)
+            LOG.info(msg)

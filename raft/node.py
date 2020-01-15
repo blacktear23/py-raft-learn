@@ -21,13 +21,14 @@ class Node(Thread):
     def run(self):
         while True:
             item = self.transport.recv_msg()
-            if self.suspended:
-                LOG.info('Skip item', item[0])
-
             cmd, params = item[0], item[1]
             if cmd == 'stop':
-                LOG.info('Stop Node')
+                LOG.info('Stop Node', self.addr)
                 break
+
+            if self.suspended:
+                LOG.info('Skip item', cmd)
+                continue
 
             if cmd == 'tick':
                 self.do_tick()
@@ -43,19 +44,20 @@ class Node(Thread):
                 self.on_message(item[0], item[1])
 
     def send_cmd(self, cmd, params=None):
-        if self.suspended:
-            return
-
         self.transport.send_msg(self.addr, [cmd, params])
 
     # API functions
     def suspend(self):
         self.suspended = True
+        self.transport.suspended = True
 
     def resume(self):
         self.suspended = False
+        self.transport.suspended = False
 
     def stop(self):
+        if self.suspended:
+            self.resume()
         self.send_cmd('stop')
 
     def tick(self):
