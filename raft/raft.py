@@ -254,6 +254,7 @@ class Raft(object):
 
     def tick(self):
         if self.is_leader():
+            # in Leader state send heartbeat to followers
             self.do_heartbeat()
             return
 
@@ -261,10 +262,14 @@ class Raft(object):
         if self.is_timeout():
             self.timeouted = True
             if self.is_candidate():
+                # in Candidate state just re-vote
                 self.do_vote()
             elif self.state == RaftState.PreCandidate:
+                # in PreCandidate state just switch to Follower
                 self.state = RaftState.Follower
             elif self.is_follower():
+                # in Follower state and not vote any more do vote
+                # else do pre-vote
                 if self.voted_for == 0:
                     self.do_vote()
                 else:
@@ -402,11 +407,11 @@ class Raft(object):
         ret.term = vote.term
         ret.vote_granted = False
 
-        # Ignore node not in peers
+        # Reject node not in peers
         if self.peers.get(vote.candidate_id, None) is None:
             return
 
-        # Ignore old term
+        # Reject old term
         if vote.term < self.term:
             self.reply_message(vote, 'vote_reply', ret)
             return
@@ -423,11 +428,13 @@ class Raft(object):
             self.reply_message(vote, 'vote_reply', ret)
             return
 
+        # If last log term not match just reject
         last_log_idx, last_log_term = self.get_last_log()
         if last_log_term > vote.last_log_term:
             self.reply_message(vote, 'vote_reply', ret)
             return
 
+        # If last lot term match but index is less than current, just reject
         if last_log_term == vote.last_log_term and last_log_idx > vote.last_log_index:
             self.reply_message(vote, 'vote_reply', ret)
             return
@@ -458,15 +465,18 @@ class Raft(object):
         ret.term = vote.term
         ret.vote_granted = False
 
+        # Reject when node not timeout
         if vote.term <= self.term or not self.timeouted:
             self.reply_message(vote, 'pre_vote_reply', ret)
             return
 
+        # Reject when log term not matched
         last_log_idx, last_log_term = self.get_last_log()
         if last_log_term > vote.last_log_term:
             self.reply_message(vote, 'pre_vote_reply', ret)
             return
 
+        # Reject when log term match bug index is less than current
         if last_log_term == vote.last_log_term and last_log_idx > vote.last_log_index:
             self.reply_message(vote, 'pre_vote_reply', ret)
             return
