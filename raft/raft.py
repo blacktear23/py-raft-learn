@@ -78,9 +78,9 @@ class Peer(object):
             return 'Unknown'
 
     def __str__(self):
-        return 'id=%d addr=%s mode=%s voted_for=%d pre_voted_for=%d next_index=%d match_index=%d match_config_version=%d' % (
+        return 'id=%d addr=%s mode=%s voted_for=%d pre_voted_for=%d next=%d match=%d match_config=%d fist_contact=%s' % (
             self.id, self.address, self.get_mode()[0], self.voted_for, self.pre_voted_for,
-            self.next_index, self.match_index, self.match_config_version
+            self.next_index, self.match_index, self.match_config_version, self.first_contact,
         )
 
     def can_vote(self):
@@ -235,7 +235,7 @@ class Raft(object):
         self.next_peers_version = None
         jkey = 'update-config-%s' % self.peers_version
         self.finish_job(jkey, True)
-        LOG.info('Commit Next Config:', self.id, 'from v %d to v %d' % (old_ver, new_ver))
+        LOG.debug('Commit Next Config:', self.id, 'from v %d to v %d' % (old_ver, new_ver))
 
     def try_commit_config(self, version):
         if version == self.next_peers_version:
@@ -360,7 +360,7 @@ class Raft(object):
         self.term += 1
         self.last_vote_term = self.term
         self.voted_for = self.id
-        LOG.info('%s enter Candidate state' % self.id)
+        LOG.debug('%s enter Candidate state' % self.id)
         last_log_idx, last_log_term = self.get_last_log()
         vote = self.prepare_msg(Vote())
         vote.term = self.term
@@ -369,7 +369,7 @@ class Raft(object):
         vote.last_log_term = last_log_term
         for peer in self.peers.values():
             peer.voted_for = 0
-            peer.first_contact = False
+            peer.first_contact = True
 
         self.reset_timer()
         self.broadcast_voter('vote', vote)
@@ -379,7 +379,7 @@ class Raft(object):
             return
 
         self.state = RaftState.PreCandidate
-        LOG.info('%s enter PreCandidate state' % self.id)
+        LOG.debug('%s enter PreCandidate state' % self.id)
         last_log_idx, last_log_term = self.get_last_log()
         vote = self.prepare_msg(PreVote())
         vote.term = self.term + 1
@@ -497,6 +497,7 @@ class Raft(object):
     def on_append_logs(self, msg):
         ret = self.prepare_msg(AppendLogsReply())
         ret.term = self.term
+        ret.match_index = self.commit_index
         ret.match_config_version = self.last_config_version()
         ret.success = False
 
@@ -528,6 +529,7 @@ class Raft(object):
                 return
 
         new_logs = []
+        deleted = []
         if len(msg.logs) > 0:
             for log in msg.logs:
                 if log.index > last_log_idx:
@@ -540,7 +542,7 @@ class Raft(object):
                     return
 
                 if log.term != clog.term:
-                    self.logs.delete_tail(log.index)
+                    deleted = self.logs.delete_tail(log.index)
                     new_logs.append(log)
                     last_log_idx = log.index
 
@@ -561,11 +563,13 @@ class Raft(object):
         self.reply_message(msg, 'append_logs_reply', ret)
         self.timeouted = False
         self.reset_timer()
+        # Finish deleted logs as failed
+        for log in deleted:
+            self.finish_job(log.index, False)
 
     def on_append_logs_reply(self, msg):
-        if not msg.success:
-            if msg.term > self.term:
-                self.haneld_stale_term()
+        if msg.term > self.term:
+            self.haneld_stale_term()
             return
 
         pid = msg.sender
@@ -576,6 +580,9 @@ class Raft(object):
         peer.next_index = msg.match_index + 1
         peer.match_index = msg.match_index
         peer.match_config_version = msg.match_config_version
+
+        if peer.first_contact:
+            peer.first_contact = False
 
         if self.peer_has_gap(peer):
             if self.need_send_snapshot(peer):
@@ -609,7 +616,7 @@ class Raft(object):
         self.finish_job(ifkey, True)
 
     def on_install_snapshot(self, msg):
-        LOG.info('on-is', msg.sender, '->', self.id, 'term:', msg.term)
+        LOG.debug('on-is', msg.sender, '->', self.id, 'term:', msg.term)
         snap = Snapshot(msg.last_log_index, msg.last_log_term)
         snap.set_data(msg.data)
         self.peers_version = snap.config_version
@@ -637,7 +644,7 @@ class Raft(object):
             self.send_append_logs_to(peer)
 
     def on_configuration_change(self, msg):
-        LOG.info('on-cc', msg.sender, '->', self.id, 'ver:', msg.version)
+        LOG.debug('on-cc', msg.sender, '->', self.id, 'ver:', msg.version)
         # if peers is empty for join nodes
         if len(self.peers) > 0:
             if msg.sender not in self.peers:
@@ -650,7 +657,7 @@ class Raft(object):
         self.reply_message(msg, 'configuration_change_reply', ret)
 
     def on_configuration_change_reply(self, msg):
-        LOG.info('on-ccr', msg.sender, '->', self.id, 'ver:', msg.version, 'success:', msg.success)
+        LOG.debug('on-ccr', msg.sender, '->', self.id, 'ver:', msg.version, 'success:', msg.success)
         if not msg.success:
             return
         pid = msg.sender
@@ -677,7 +684,7 @@ class Raft(object):
             self.timeouted = False
             for peer in self.peers.values():
                 peer.next_index = last_index + 1
-                peer.first_contact = False
+                peer.first_contact = True
 
             LOG.info('%s enter Leader state' % self.id)
             self.do_heartbeat()
@@ -704,7 +711,6 @@ class Raft(object):
         ret.leader_commit = self.commit_index
         if peer.first_contact:
             probe = True
-            peer.first_contact = False
 
         if not probe:
             ret.logs = self.get_logs(peer.next_index)
@@ -745,7 +751,7 @@ class Raft(object):
         self.last_snapshot.config_version = self.peers_version
         self.logs.compact(self.last_snapshot.last_log_index - 2)
         self.last_snapshot.set_logs(self.logs.all())
-        LOG.info('do-snapshot', self.id, self.last_snapshot.last_log_term, self.last_snapshot.last_log_index)
+        LOG.debug('do-snapshot', self.id, self.last_snapshot.last_log_term, self.last_snapshot.last_log_index)
 
     def calculate_max_commit_index(self):
         last_log_idx, _ = self.get_last_log()
@@ -807,7 +813,7 @@ class Raft(object):
         isn.last_log_term = snap.last_log_term
         isn.data = snap.data
         isn.logs = snap.logs
-        LOG.info('send-is', self.id, '->', peer.id)
+        LOG.debug('send-is', self.id, '->', peer.id)
         self.send_message(peer.id, 'install_snapshot', isn)
 
     def try_apply_config(self, msg):
