@@ -279,6 +279,7 @@ def test_add_learner_with_install_snapshot():
     for node in nodes:
         rg = node.get_cluster(6)
         if rg:
-            if len(rg.fsm.data) != 11:
+            if len(rg.fsm.data) != 20:
                 LOG.error('Add learner with install snapshot fail, FSM state not consistent', rg.id)
+                print(len(rg.fsm.data))
     stop_nodes(nodes)

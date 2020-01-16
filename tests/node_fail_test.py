@@ -34,7 +34,6 @@ def test_leader_crash():
 
         if suspended and new_leader is None:
             ret = on_leader(nodes, 1, lambda l: l)
-            LOG.info('New Leader:', ret)
             if ret:
                 new_leader = ret
                 continue

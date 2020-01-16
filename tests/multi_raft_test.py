@@ -40,7 +40,7 @@ def test_multi_raft():
         2: None,
         3: None,
     }
-    for i in range(10):
+    for i in range(20):
         tick_nodes(nodes)
 
         for i in range(3):
@@ -50,6 +50,9 @@ def test_multi_raft():
 
         if None not in leaders.values():
             break
+
+    if None in leaders.values():
+        LOG.error('Multi-raft fail: some cluster not elect a leader: %s' % leaders)
 
     for i in range(10):
         tick_nodes(nodes)

@@ -57,7 +57,7 @@ def tick_nodes(nodes, dump=None):
     for node in nodes:
         node.tick()
 
-    time.sleep(0.05)
+    time.sleep(0.01)
     if dump is not None:
         LOG.info('---------- Tick %s ----------' % dump)
         dump_clusters(nodes)
