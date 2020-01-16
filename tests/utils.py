@@ -31,7 +31,8 @@ def bootstrap_raft_group(nodes, config):
                 node.create_raft_group(
                     cluster_id, peer['id'],
                     peer.get('mode', PeerMode.Voter),
-                    config['nodes']
+                    config['nodes'],
+                    InMemoryLogStorage(),
                 )
 
 

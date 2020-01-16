@@ -5,6 +5,7 @@ from multi_raft_test import *
 
 
 TESTS = [
+    test_add_learner_with_install_snapshot,
     test_bootstrap,
     test_propose,
     test_transfer_leader,

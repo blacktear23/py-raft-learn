@@ -58,6 +58,7 @@ class Peer(object):
         if id <= 0:
             raise Exception('ID should not less than 1')
         self.id = id
+        self.first_contact = True
         self.voted_for = 0
         self.pre_voted_for = 0
         self.next_index = 1
@@ -117,7 +118,7 @@ class Raft(object):
     #   cluster_id: int
     #   peer_configs: [(id, mode, addr)...]
     #   transport: Transport object
-    def __init__(self, id, cluster_id, address, peer_configs, transport, mode=PeerMode.Voter):
+    def __init__(self, id, cluster_id, address, peer_configs, transport, log_storage, mode=PeerMode.Voter):
         if id <= 0:
             raise Exception('ID should not less than 1')
 
@@ -128,7 +129,7 @@ class Raft(object):
         self.state = RaftState.Follower
         self.term = 0
         self.expire_tick = 0
-        self.logs = []
+        self.logs = log_storage
         self.commit_index = 0
         self.apply_index = 0
         self.voted_for = 0
@@ -175,7 +176,7 @@ class Raft(object):
             self.id, self.get_state()[0:1], self.address, self.term, self.voted_for, self.config_version,
             self.commit_index, self.apply_index, self.expire_tick, tostr,
         )
-        ret += self.format_list('logs', self.logs)
+        ret += '\n    logs=[%s]' % self.logs.dump()
         ret += self.format_list('jobs', self.jobs.values())
         ret += self.format_list('peers', self.peers.values())
         if self.next_peers is not None:
@@ -286,26 +287,17 @@ class Raft(object):
         peer.address = peer_address
 
     def get_last_log(self):
-        if len(self.logs) == 0:
+        log = self.logs.get_last_log()
+        if log is None:
             return 0, self.term
 
-        log = self.logs[-1]
         return log.index, log.term
 
     def get_log(self, idx):
-        for log in self.logs:
-            if log.index == idx:
-                return log
+        return self.logs.get_log(idx)
 
-        return None
-
-    def get_logs(self, begin_id):
-        ret = []
-        for log in self.logs:
-            if log.index >= begin_id:
-                ret.append(log)
-
-        return ret
+    def get_logs(self, start_idx):
+        return self.logs.get_logs(start_idx)
 
     def prepare_msg(self, msg):
         msg.cluster_id = self.cluster_id
@@ -377,11 +369,15 @@ class Raft(object):
         vote.last_log_term = last_log_term
         for peer in self.peers.values():
             peer.voted_for = 0
+            peer.first_contact = False
 
         self.reset_timer()
         self.broadcast_voter('vote', vote)
 
     def do_pre_vote(self):
+        if self.mode != PeerMode.Voter:
+            return
+
         self.state = RaftState.PreCandidate
         LOG.info('%s enter PreCandidate state' % self.id)
         last_log_idx, last_log_term = self.get_last_log()
@@ -403,6 +399,10 @@ class Raft(object):
 
     # On message functions
     def on_vote(self, vote):
+        # Ignore vote message when not Voter
+        if self.mode != PeerMode.Voter:
+            return
+
         ret = self.prepare_msg(VoteReply())
         ret.term = vote.term
         ret.vote_granted = False
@@ -497,6 +497,7 @@ class Raft(object):
     def on_append_logs(self, msg):
         ret = self.prepare_msg(AppendLogsReply())
         ret.term = self.term
+        ret.match_config_version = self.last_config_version()
         ret.success = False
 
         # Ignore old term
@@ -504,36 +505,50 @@ class Raft(object):
             self.reply_message(msg, 'append_logs_reply', ret)
             return
 
-        if msg.term >= self.term:
+        if msg.term > self.term or self.state != RaftState.Follower:
             self.term = msg.term
             self.state = RaftState.Follower
-            self.voted_for = msg.sender
             ret.term = msg.term
 
-        ret.success = True
-        if len(msg.logs) == 0:
-            # Heartbeat and prev log not found just reply match index to commit index
-            log = self.get_log(msg.prev_log_index)
-            if log is None or log.term < msg.prev_log_term:
-                ret.match_index = self.commit_index
-                ret.match_config_version = self.next_config_version()
-                if msg.config_version > self.config_version:
-                    self.try_apply_config(msg)
-                self.reply_message(msg, 'append_logs_reply', ret)
-                self.timeouted = False
-                self.reset_timer()
-                return
+        self.voted_for = msg.sender
 
         last_log_idx, last_log_term = self.get_last_log()
-        if last_log_idx > msg.prev_log_index:
-            self.clean_uncommit_logs(msg)
 
-        for log in msg.logs:
-            self.logs.append(log)
+        if msg.prev_log_index > 0:
+            prev_log_term = last_log_term
+            if msg.prev_log_index != last_log_idx:
+                log = self.get_log(msg.prev_log_index)
+                if log is None:
+                    self.reply_message(msg, 'append_logs_reply', ret)
+                    return
+                prev_log_term = log.term
+
+            if prev_log_term != msg.prev_log_term:
+                self.reply_message(msg, 'append_logs_reply', ret)
+                return
+
+        new_logs = []
+        if len(msg.logs) > 0:
+            for log in msg.logs:
+                if log.index > last_log_idx:
+                    new_logs.append(log)
+                    continue
+
+                clog = self.logs.get_log(log.index)
+                if clog is None:
+                    self.reply_message(msg, 'append_logs_reply', ret)
+                    return
+
+                if log.term != clog.term:
+                    self.logs.delete_tail(log.index)
+                    new_logs.append(log)
+                    last_log_idx = log.index
+
+        if len(new_logs) > 0:
+            self.logs.append_logs(new_logs)
 
         nlast_log_idx, nlast_log_term = self.get_last_log()
         ret.match_index = nlast_log_idx
-
         if msg.leader_commit > self.commit_index:
             self.commit_index = min(msg.leader_commit, ret.match_index)
             self.do_apply()
@@ -541,13 +556,16 @@ class Raft(object):
         if msg.config_version > self.config_version:
             self.try_apply_config(msg)
 
-        ret.match_config_version = self.next_config_version()
+        ret.success = True
+        ret.match_config_version = self.last_config_version()
         self.reply_message(msg, 'append_logs_reply', ret)
         self.timeouted = False
         self.reset_timer()
 
     def on_append_logs_reply(self, msg):
         if not msg.success:
+            if msg.term > self.term:
+                self.haneld_stale_term()
             return
 
         pid = msg.sender
@@ -582,6 +600,10 @@ class Raft(object):
         if not self.in_leader_transfer:
             return
 
+        # Set self as follower and reset timer
+        self.state = RaftState.Follower
+        self.reset_timer()
+        # Finish leader transfer
         self.in_leader_transfer = False
         ifkey = 'transfer-leader-to-%s' % msg.sender
         self.finish_job(ifkey, True)
@@ -595,8 +617,8 @@ class Raft(object):
         self.commit_index = msg.last_log_index
         self.apply_index = msg.last_log_index
         self.term = msg.term
-        self.logs = msg.logs
-        ret = self.prepare_msg(InstallSnapshotReply)
+        self.logs.loads(msg.logs)
+        ret = self.prepare_msg(InstallSnapshotReply())
         ret.last_log_index = msg.last_log_index
         ret.last_log_term = msg.last_log_term
         ret.success = True
@@ -639,6 +661,10 @@ class Raft(object):
     # End On message functions
 
     # Helper functions
+    def haneld_stale_term(self):
+        self.state = RaftState.Follower
+        self.reset_timer()
+
     def check_vote_status(self):
         voted = 1
         for peer in self.peers.values():
@@ -651,9 +677,10 @@ class Raft(object):
             self.timeouted = False
             for peer in self.peers.values():
                 peer.next_index = last_index + 1
+                peer.first_contact = False
 
             LOG.info('%s enter Leader state' % self.id)
-            self.do_heartbeat(True)
+            self.do_heartbeat()
 
     def check_pre_vote_status(self):
         voted = 1
@@ -675,22 +702,17 @@ class Raft(object):
             ret.prev_log_term = self.term
 
         ret.leader_commit = self.commit_index
+        if peer.first_contact:
+            probe = True
+            peer.first_contact = False
+
         if not probe:
             ret.logs = self.get_logs(peer.next_index)
         else:
             ret.logs = []
+
         ret.config_version = self.config_version
         self.send_message(peer.id, 'append_logs', ret)
-
-    def clean_uncommit_logs(self, msg):
-        new_logs = []
-        for log in self.logs:
-            if log.index <= msg.prev_log_index:
-                new_logs.append(log)
-            else:
-                self.finish_job(log.index, False)
-
-        self.logs = new_logs
 
     def do_apply(self):
         if self.apply_index >= self.commit_index:
@@ -709,11 +731,11 @@ class Raft(object):
             self.do_snapshot()
 
     def need_do_snapshot(self):
-        if len(self.logs) < 10:
+        if self.logs.size() < 10:
             return False
 
-        first_log_idx = self.logs[0].index
-        if self.apply_index - first_log_idx > 3:
+        first_log = self.logs.get_first_log()
+        if self.apply_index - first_log.index > 3:
             return True
 
         return False
@@ -721,8 +743,8 @@ class Raft(object):
     def do_snapshot(self):
         self.last_snapshot = self.fsm.create_snapshot()
         self.last_snapshot.config_version = self.peers_version
-        self.logs = [log for log in self.logs if log.index >= self.last_snapshot.last_log_index - 2]
-        self.last_snapshot.set_logs(self.logs)
+        self.logs.compact(self.last_snapshot.last_log_index - 2)
+        self.last_snapshot.set_logs(self.logs.all())
         LOG.info('do-snapshot', self.id, self.last_snapshot.last_log_term, self.last_snapshot.last_log_index)
 
     def calculate_max_commit_index(self):
@@ -785,6 +807,7 @@ class Raft(object):
         isn.last_log_term = snap.last_log_term
         isn.data = snap.data
         isn.logs = snap.logs
+        LOG.info('send-is', self.id, '->', peer.id)
         self.send_message(peer.id, 'install_snapshot', isn)
 
     def try_apply_config(self, msg):
@@ -826,7 +849,7 @@ class Raft(object):
             if peer.match_config_version != ccv:
                 self.send_configuration_change_to(peer, False)
 
-    def next_config_version(self):
+    def last_config_version(self):
         if self.next_peers is not None:
             return self.next_peers_version
         return self.peers_version
@@ -871,6 +894,10 @@ class Raft(object):
             tpeer = self.peers.get(target)
             if tpeer is None or tpeer.mode != PeerMode.Voter:
                 future.set_error('Target not found or target is not voter')
+                return
+
+            if tpeer.in_install_snapshot:
+                future.set_error('Target is not ready')
                 return
 
         if not self.is_leader() or self.id == target:

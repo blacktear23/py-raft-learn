@@ -146,7 +146,7 @@ def test_add_voter():
                 continue
 
         if leader and not add_node_future:
-            node.create_raft_group(4, conf['id'], conf['mode'], cluster_4['nodes'])
+            node.create_raft_group(4, conf['id'], conf['mode'], cluster_4['nodes'], InMemoryLogStorage())
             add_node_future = on_leader(nodes, 4, lambda l: l.add_node(4, conf))
 
     if add_node_future is None:
@@ -200,7 +200,7 @@ def test_add_learner():
                 continue
 
         if leader and not add_node_future:
-            node.create_raft_group(5, conf['id'], conf['mode'], cluster_5['nodes'])
+            node.create_raft_group(5, conf['id'], conf['mode'], cluster_5['nodes'], InMemoryLogStorage())
             add_node_future = on_leader(nodes, 5, lambda l: l.add_node(5, conf))
 
     if add_node_future is None:
@@ -220,4 +220,65 @@ def test_add_learner():
                 if rg.peers[4].mode != PeerMode.Learner:
                     LOG.error('Add Node Learner Fail, new node in peers with different mode')
 
+    stop_nodes(nodes)
+
+
+def test_add_learner_with_install_snapshot():
+    transport_ex = QueueTransportExchange()
+    nodes = init_nodes(5, transport_ex)
+    cluster_6 = {
+        'cluster_id': 6,
+        'nodes': [
+            {'id': 1, 'addr': 'node-1'},
+            {'id': 2, 'addr': 'node-2'},
+            {'id': 3, 'addr': 'node-3'},
+        ],
+    }
+    bootstrap_raft_group(nodes, cluster_6)
+
+    leader = None
+    for i in range(20):
+        tick_nodes(nodes)
+
+        if leader is None:
+            leader = on_leader(nodes, 6, lambda l: l)
+        else:
+            break
+
+    for i in range(20):
+        tick_nodes(nodes)
+
+        key = 'Key%s' % i
+        val = 'Data-%s' % i
+        leader.set(6, key, val)
+
+    for i in range(3):
+        tick_nodes(nodes)
+
+    node = nodes[3]
+    conf = {
+        'id': 4,
+        'mode': PeerMode.Learner,
+        'addr': node.addr,
+    }
+    node.create_raft_group(6, conf['id'], conf['mode'], cluster_6['nodes'], InMemoryLogStorage())
+    future = leader.add_node(6, conf)
+    for i in range(10):
+        tick_nodes(nodes)
+
+        if future.finished:
+            break
+
+    if not future.finished:
+        LOG.error('Add learner with install snapshot fail, add node not finished')
+
+    for i in range(5):
+        tick_nodes(nodes)
+
+    # dump_clusters(nodes)
+    for node in nodes:
+        rg = node.get_cluster(6)
+        if rg:
+            if len(rg.fsm.data) != 11:
+                LOG.error('Add learner with install snapshot fail, FSM state not consistent', rg.id)
     stop_nodes(nodes)
