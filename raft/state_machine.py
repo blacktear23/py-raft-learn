@@ -17,17 +17,18 @@ class Snapshot(object):
 
 
 class StateMachine(object):
-    def __init__(self):
-        self.last_log_index = 0
-        self.last_log_term = 0
-        self.data = {}
+    def __init__(self, storage):
+        self.storage = storage
+        idx, term = storage.get_last_log()
+        self.last_log_index = idx
+        self.last_log_term = term
 
     def process_command(self, cmd, key, value):
         cmd = cmd.upper()
         if cmd == 'SET':
-            self.data[key] = value
+            self.storage.set(key, value)
         elif cmd == 'DEL':
-            del self.data[key]
+            self.storage.delete(key, value)
         return True
 
     def apply(self, logs):
@@ -40,6 +41,7 @@ class StateMachine(object):
         if last_log is not None:
             self.last_log_index = last_log.index
             self.last_log_term = last_log.term
+            self.storage.set_last_log(last_log.index, last_log.term)
 
         return len(logs)
 
@@ -52,20 +54,22 @@ class StateMachine(object):
 
     def create_snapshot(self):
         snap = Snapshot(self.last_log_index, self.last_log_term)
-        snap.set_data(json.dumps(self.data))
+        data = self.storage.dump()
+        snap.set_data(data)
         return snap
 
     def install_snapshot(self, snapshot):
-        self.data = json.loads(snapshot.data)
+        self.storage.load(snapshot.data)
         self.last_log_index = snapshot.last_log_index
         self.last_log_term = snapshot.last_log_term
+        self.storage.set_last_log(self.last_log_index, self.last_log_term)
 
     def get(self, key, default=None):
-        return self.data.get(key, default)
+        return self.storage.get(key, default)
 
     def dump(self):
-        ret = ['(T%d I%d)' % (self.last_log_term, self.last_log_index)]
-        for k, v in self.data.items():
-            ret.append('%s => %s' % (k, v))
+        ret = '(T%d I%d) %s' % (self.last_log_term, self.last_log_index, self.storage)
+        return ret
 
-        return ', '.join(ret)
+    def size(self):
+        return self.storage.size()

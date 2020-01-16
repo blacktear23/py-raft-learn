@@ -1,3 +1,6 @@
+import json
+
+
 class LogStorage(object):
     def get_first_log(self):
         raise Exception('Not Implements')
@@ -30,6 +33,35 @@ class LogStorage(object):
         raise Exception('Not Implements')
 
     def dump(self):
+        return ''
+
+
+class StateMachineStorage(object):
+    def set_last_log(self, index, term):
+        raise Exception('Not Implements')
+
+    def get_last_log(self):
+        raise Exception('Not Implements')
+
+    def set(self, key, value):
+        raise Exception('Not Implements')
+
+    def get(self, key, default=None):
+        raise Exception('Not Implements')
+
+    def delete(self, key):
+        raise Exception('Not Implements')
+
+    def dump(self):
+        raise Exception('Not Implements')
+
+    def load(self, data):
+        raise Exception('Not Implements')
+
+    def size(self):
+        raise Exception('Not Implements')
+
+    def __str__(self):
         return ''
 
 
@@ -96,3 +128,44 @@ class InMemoryLogStorage(LogStorage):
 
     def dump(self):
         return ', '.join([str(log) for log in self.logs])
+
+
+class InMemoryStateMachineStorage(StateMachineStorage):
+    def __init__(self):
+        self.last_log_index = 0
+        self.last_log_term = 0
+        self.data = {}
+
+    def set_last_log(self, index, term):
+        self.last_log_index = index
+        self.last_log_term = term
+
+    def get_last_log(self):
+        lli, llt = self.last_log_index, self.last_log_term
+        return lli, llt
+
+    def set(self, key, value):
+        self.data[key] = value
+
+    def get(self, key, default=None):
+        return self.data.get(key, default)
+
+    def delete(self, key):
+        if key in self.data:
+            del self.data[key]
+
+    def dump(self):
+        return json.dumps(self.data)
+
+    def load(self, data):
+        self.data = json.loads(data)
+
+    def size(self):
+        return len(self.data)
+
+    def __str__(self):
+        items = []
+        for k, v in self.data.items():
+            items.append('%s => %s' % (k, v))
+
+        return ', '.join(items)

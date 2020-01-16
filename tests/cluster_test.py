@@ -146,7 +146,7 @@ def test_add_voter():
                 continue
 
         if leader and not add_node_future:
-            node.create_raft_group(4, conf['id'], conf['mode'], cluster_4['nodes'], InMemoryLogStorage())
+            node.create_raft_group(4, conf['id'], conf['mode'], cluster_4['nodes'], InMemoryLogStorage(), InMemoryStateMachineStorage())
             add_node_future = on_leader(nodes, 4, lambda l: l.add_node(4, conf))
 
     if add_node_future is None:
@@ -200,7 +200,7 @@ def test_add_learner():
                 continue
 
         if leader and not add_node_future:
-            node.create_raft_group(5, conf['id'], conf['mode'], cluster_5['nodes'], InMemoryLogStorage())
+            node.create_raft_group(5, conf['id'], conf['mode'], cluster_5['nodes'], InMemoryLogStorage(), InMemoryStateMachineStorage())
             add_node_future = on_leader(nodes, 5, lambda l: l.add_node(5, conf))
 
     if add_node_future is None:
@@ -261,7 +261,7 @@ def test_add_learner_with_install_snapshot():
         'mode': PeerMode.Learner,
         'addr': node.addr,
     }
-    node.create_raft_group(6, conf['id'], conf['mode'], cluster_6['nodes'], InMemoryLogStorage())
+    node.create_raft_group(6, conf['id'], conf['mode'], cluster_6['nodes'], InMemoryLogStorage(), InMemoryStateMachineStorage())
     future = leader.add_node(6, conf)
     for i in range(10):
         tick_nodes(nodes)
@@ -279,7 +279,6 @@ def test_add_learner_with_install_snapshot():
     for node in nodes:
         rg = node.get_cluster(6)
         if rg:
-            if len(rg.fsm.data) != 20:
+            if rg.fsm.size() != 20:
                 LOG.error('Add learner with install snapshot fail, FSM state not consistent', rg.id)
-                print(len(rg.fsm.data))
     stop_nodes(nodes)

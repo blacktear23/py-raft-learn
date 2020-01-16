@@ -118,7 +118,7 @@ class Raft(object):
     #   cluster_id: int
     #   peer_configs: [(id, mode, addr)...]
     #   transport: Transport object
-    def __init__(self, id, cluster_id, address, peer_configs, transport, log_storage, mode=PeerMode.Voter):
+    def __init__(self, id, cluster_id, address, peer_configs, transport, log_storage, fsm_storage, mode=PeerMode.Voter):
         if id <= 0:
             raise Exception('ID should not less than 1')
 
@@ -138,7 +138,7 @@ class Raft(object):
         self.in_leader_transfer = False
         self.leader_transfer_target = 0
         self.timeout_now_sended = False
-        self.fsm = StateMachine()
+        self.fsm = StateMachine(fsm_storage)
         self.last_snapshot = None
         self.transport = transport
         self.init_peers(peer_configs)

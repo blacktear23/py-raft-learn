@@ -67,7 +67,7 @@ def test_multi_raft():
 
     for cid, l in leaders.items():
         fsm = l.get_cluster(cid).fsm
-        if len(fsm.data) != 10:
+        if fsm.size() != 10:
             LOG.error('Cluster:', cid, 'lost data')
 
     stop_nodes(nodes)

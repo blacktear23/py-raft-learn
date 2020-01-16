@@ -14,8 +14,8 @@ class Node(Thread):
         self.raft_groups = {}
         self.suspended = False
 
-    def create_raft_group(self, cluster_id, id, mode, peer_confs, log_storage):
-        raft = Raft(id, cluster_id, self.addr, peer_confs, self.transport, log_storage, mode)
+    def create_raft_group(self, cluster_id, id, mode, peer_confs, log_storage, fsm_storage):
+        raft = Raft(id, cluster_id, self.addr, peer_confs, self.transport, log_storage, fsm_storage, mode)
         self.raft_groups[cluster_id] = raft
 
     def run(self):

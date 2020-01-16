@@ -33,6 +33,7 @@ def bootstrap_raft_group(nodes, config):
                     peer.get('mode', PeerMode.Voter),
                     config['nodes'],
                     InMemoryLogStorage(),
+                    InMemoryStateMachineStorage(),
                 )
 
 
