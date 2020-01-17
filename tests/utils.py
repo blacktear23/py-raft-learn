@@ -1,5 +1,6 @@
-from raft import *
 import time
+from raft import *
+from raft.network_transport import *
 
 
 def init_nodes(num, transport_ex):
@@ -54,11 +55,11 @@ def on_leader(nodes, cluster_id, func=None):
     return ret
 
 
-def tick_nodes(nodes, dump=None):
+def tick_nodes(nodes, dump=None, duration=0.01):
     for node in nodes:
         node.tick()
 
-    time.sleep(0.01)
+    time.sleep(duration)
     if dump is not None:
         LOG.info('---------- Tick %s ----------' % dump)
         dump_clusters(nodes)
