@@ -29,6 +29,8 @@ class StateMachine(object):
             self.storage.set(key, value)
         elif cmd == 'DEL':
             self.storage.delete(key, value)
+        elif cmd == 'NOP':
+            return True
         return True
 
     def apply(self, logs):

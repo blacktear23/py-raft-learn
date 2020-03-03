@@ -31,7 +31,8 @@ def test_replication():
 
         if tlf and tlf.finished:
             leader = on_leader(nodes, 1, lambda l: l)
-            break
+            if leader:
+                break
 
     future = None
     for i in range(20):

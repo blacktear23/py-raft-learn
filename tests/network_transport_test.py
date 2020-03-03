@@ -21,7 +21,7 @@ def stop_servers(servers):
 
 
 def test_network_transport():
-    LOG.level = Logger.DEBUG
+    LOG.level = Logger.INFO
 
     addrs = [
         '127.0.0.1:9901',
@@ -43,7 +43,7 @@ def test_network_transport():
 
     leader = None
     for i in range(20):
-        tick_nodes(nodes, i, 0.5)
+        tick_nodes(nodes, None, 0.5)
 
         if leader is None:
             leader = on_leader(nodes, 1, lambda l: l)
@@ -57,14 +57,14 @@ def test_network_transport():
         return
 
     for i in range(10):
-        tick_nodes(nodes, i, 0.5)
+        tick_nodes(nodes, None, 0.5)
 
         key = 'Key%d' % i
         val = 'Data %d' % i
         leader.set(1, key, val)
 
     for i in range(3):
-        tick_nodes(nodes, i, 0.5)
+        tick_nodes(nodes, None, 0.5)
 
     dump_clusters(nodes)
     stop_servers(servers)

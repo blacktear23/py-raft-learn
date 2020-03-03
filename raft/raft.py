@@ -495,6 +495,7 @@ class Raft(object):
             self.check_pre_vote_status()
 
     def on_append_logs(self, msg):
+        LOG.debug('on-al', msg.sender, '->', self.id, msg.to_json())
         ret = self.prepare_msg(AppendLogsReply())
         ret.term = self.term
         ret.match_index = self.commit_index
@@ -516,16 +517,18 @@ class Raft(object):
         last_log_idx, last_log_term = self.get_last_log()
 
         if msg.prev_log_index > 0:
-            prev_log_term = last_log_term
-            if msg.prev_log_index != last_log_idx:
-                log = self.get_log(msg.prev_log_index)
-                if log is None:
-                    self.reply_message(msg, 'append_logs_reply', ret)
-                    return
-                prev_log_term = log.term
-
-            if prev_log_term != msg.prev_log_term:
+            log = self.get_log(msg.prev_log_index)
+            if log is None:
+                deleted = self.logs.delete_tail(ret.match_index + 1)
                 self.reply_message(msg, 'append_logs_reply', ret)
+                for log in deleted:
+                    self.finish_job(log.index, False)
+                return
+            if log.term != msg.prev_log_term:
+                deleted = self.logs.delete_tail(ret.match_index + 1)
+                self.reply_message(msg, 'append_logs_reply', ret)
+                for log in deleted:
+                    self.finish_job(log.index, False)
                 return
 
         new_logs = []
@@ -551,7 +554,7 @@ class Raft(object):
 
         nlast_log_idx, nlast_log_term = self.get_last_log()
         ret.match_index = nlast_log_idx
-        if msg.leader_commit > self.commit_index:
+        if msg.prev_log_index >= last_log_idx and msg.leader_commit > self.commit_index:
             self.commit_index = min(msg.leader_commit, ret.match_index)
             self.do_apply()
 
@@ -568,6 +571,7 @@ class Raft(object):
             self.finish_job(log.index, False)
 
     def on_append_logs_reply(self, msg):
+        LOG.debug('on-alr', msg.sender, '->', self.id, msg.to_json())
         if msg.term > self.term:
             self.haneld_stale_term()
             return
@@ -687,7 +691,14 @@ class Raft(object):
                 peer.first_contact = True
 
             LOG.info('%s enter Leader state' % self.id)
+            self.add_nop()
             self.do_heartbeat()
+
+    def add_nop(self):
+        last_idx, _ = self.get_last_log()
+        if self.commit_index < last_idx:
+            log = Log(last_idx + 1, self.term, 'NOP KEY VALUE')
+            self.logs.append(log)
 
     def check_pre_vote_status(self):
         voted = 1

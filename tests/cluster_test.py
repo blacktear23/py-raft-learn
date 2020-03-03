@@ -160,6 +160,8 @@ def test_add_voter():
         if rg is not None:
             if len(rg.peers) != 3:
                 LOG.error('Add Node Voter Fail, node', rg.id, 'peers is', len(rg.peers), 'not 3')
+                break
+
             if rg.id != 4:
                 if 4 not in rg.peers:
                     LOG.error('Add Node Voter Fail, new node not in peers')
@@ -214,6 +216,8 @@ def test_add_learner():
         if rg is not None:
             if len(rg.peers) != 3:
                 LOG.error('Add Node Learner Fail, node', rg.id, 'peers is', len(rg.peers), 'not 3')
+                break
+
             if rg.id != 4:
                 if 4 not in rg.peers:
                     LOG.error('Add Node Learner Fail, new node not in peers')
