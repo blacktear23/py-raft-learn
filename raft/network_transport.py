@@ -96,10 +96,11 @@ class NetworkMessageSender(asyncore.dispatcher):
 
 class NetworkMessageHandler(asyncore.dispatcher_with_send):
     def __init__(self, sock, transport):
+        self.lock = Lock()
         self.out_buffer = ''
-        asyncore.dispatcher_with_send.__init__(self, sock)
         self.transport = transport
         self.buffer = ''
+        asyncore.dispatcher_with_send.__init__(self, sock)
 
     def handle_read(self):
         while True:
@@ -125,21 +126,26 @@ class NetworkMessageHandler(asyncore.dispatcher_with_send):
 
     def decode_one_message(self):
         size_field_len = struct.calcsize('L')
+        self.lock.acquire()
         buflen = len(self.buffer)
         if buflen <= size_field_len:
+            self.lock.release()
             return None
 
         try:
             msg_size = struct.unpack('L', self.buffer[0:size_field_len])[0]
             if buflen < msg_size + size_field_len:
+                self.lock.release()
                 return None
 
             msg_body = str(self.buffer[size_field_len:size_field_len + msg_size])
             self.buffer = self.buffer[size_field_len + msg_size:]
             cmd, data = msg_body.split('|')
+            self.lock.release()
             return [cmd, data]
         except Exception as e:
             logging.exception(e)
+            self.lock.release()
             return None
 
 

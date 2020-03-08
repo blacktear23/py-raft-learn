@@ -125,8 +125,8 @@ def test_brain_split():
 
     leader = on_leader(nodes, 1, lambda l: l)
     rg = leader.get_cluster(1)
-    if rg.term > 3:
-        LOG.error('Brain Split Fail, term too big')
+    if rg.term > 4:
+        LOG.error('Brain Split Fail, term too big', rg.term)
 
     if rg.id == 1:
         LOG.error('Brain Split Fail, Leader should not be 1')
@@ -198,7 +198,7 @@ def test_brain_split_2():
 
     leader = on_leader(nodes, 1, lambda l: l)
     rg = leader.get_cluster(1)
-    if rg.term > 3:
+    if rg.term > 4:
         LOG.error('Brain Split Fail, term too big')
 
     if rg.id in [1, 2]:
